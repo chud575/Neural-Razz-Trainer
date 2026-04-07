@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Swift/Xcode build artifacts
+.build/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# Checkpoints (large training data)
+checkpoints/
+
+# Strategy files (large generated data)
+*.json

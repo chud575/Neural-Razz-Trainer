@@ -111,8 +111,7 @@ class ServerManager: ObservableObject {
             Bundle.main.bundlePath + "/../../../../../backend",
             Bundle.main.bundlePath + "/../../../../backend",
             Bundle.main.bundlePath + "/../../../../../../backend",
-            // Explicit paths — worktree first, then main repo
-            NSHomeDirectory() + "/Documents/Poker Apps/Neural-Razz-Trainer/.claude/worktrees/eloquent-perlman/backend",
+            // Explicit path — main repo
             NSHomeDirectory() + "/Documents/Poker Apps/Neural-Razz-Trainer/backend",
         ]
 

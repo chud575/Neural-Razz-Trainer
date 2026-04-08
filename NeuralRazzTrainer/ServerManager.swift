@@ -6,6 +6,7 @@ import Combine
 class ServerManager: ObservableObject {
     @Published var isRunning = false
     @Published var isHealthy = false
+    @Published var serverVersion: String = ""
     @Published var serverLog: [String] = []
 
     private var process: Process?
@@ -21,7 +22,7 @@ class ServerManager: ObservableObject {
 
         // Find the backend directory relative to the app
         let backendDir = findBackendDir()
-        process.arguments = [backendDir + "/server.py"]
+        process.arguments = ["-u", backendDir + "/server.py"]
         process.currentDirectoryURL = URL(fileURLWithPath: backendDir)
 
         // Capture stdout/stderr
@@ -88,6 +89,12 @@ class ServerManager: ObservableObject {
                         self?.log("Server is healthy")
                     }
                     self?.isHealthy = true
+                    // Parse version from health response
+                    if let data = data,
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let version = json["version"] as? String {
+                        self?.serverVersion = version
+                    }
                 } else {
                     self?.isHealthy = false
                 }
@@ -96,25 +103,31 @@ class ServerManager: ObservableObject {
     }
 
     private func findBackendDir() -> String {
-        // Search for backend/server.py relative to the app
+        // Strategy: walk up from the source file location (Package.swift directory)
+        // to find the backend/ sibling directory. This works for both the main repo
+        // and worktree checkouts.
         let candidates = [
-            // Development: source tree
+            // Development: source tree (various nesting levels from DerivedData)
             Bundle.main.bundlePath + "/../../../../../backend",
-            // Adjacent to app
             Bundle.main.bundlePath + "/../../../../backend",
-            // Explicit path
-            NSHomeDirectory() + "/Desktop/Poker Apps/Neural Razz Trainer/backend",
+            Bundle.main.bundlePath + "/../../../../../../backend",
+            // Explicit paths — worktree first, then main repo
+            NSHomeDirectory() + "/Documents/Poker Apps/Neural-Razz-Trainer/.claude/worktrees/eloquent-perlman/backend",
+            NSHomeDirectory() + "/Documents/Poker Apps/Neural-Razz-Trainer/backend",
         ]
 
         for path in candidates {
             let resolved = (path as NSString).standardizingPath
             if FileManager.default.fileExists(atPath: resolved + "/server.py") {
+                log("Found backend at: \(resolved)")
                 return resolved
             }
         }
 
         // Fallback
-        return NSHomeDirectory() + "/Desktop/Poker Apps/Neural Razz Trainer/backend"
+        let fallback = NSHomeDirectory() + "/Documents/Poker Apps/Neural-Razz-Trainer/backend"
+        log("WARNING: Using fallback backend path: \(fallback)")
+        return fallback
     }
 
     private func log(_ msg: String) {

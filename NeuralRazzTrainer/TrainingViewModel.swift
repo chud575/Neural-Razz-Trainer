@@ -17,6 +17,10 @@ class TrainingViewModel: ObservableObject {
     @Published var reservoirSize: Int = 2_000_000
     @Published var enableHindsight: Bool = false
 
+    // Value mode config
+    @Published var mcSamples: Int = 200
+    @Published var trainStepsPerRetrain: Int = 200
+
     // Opponent config (set by ContentView before training)
     var opponentConfig: [String: Any]? = nil
 
@@ -93,6 +97,10 @@ class TrainingViewModel: ObservableObject {
             "reservoir_size": reservoirSize,
             "enable_hindsight": enableHindsight,
         ]
+        if selectedMode == .value {
+            body["mc_samples"] = mcSamples
+            body["train_steps"] = trainStepsPerRetrain
+        }
         if let oppConfig = opponentConfig {
             body["opponent_config"] = oppConfig
         }

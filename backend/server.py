@@ -20,12 +20,18 @@ from flask import Flask, request, jsonify
 
 from trainer_strategy import TrainingConfig, TrainingState, train_strategy
 from trainer_regret import DeepCFRConfig, train_deep_cfr
+from trainer_value import ValueConfig, train_value
 from networks import StrategyNetwork, export_to_json
 from features import extract_features, FEATURE_DIM
 from razz_game import HeadsUpRazzGame, Card, Action
-from checkpoint import save_checkpoint, load_checkpoint, has_checkpoint, delete_checkpoint
+from checkpoint import (
+    save_checkpoint, load_checkpoint, has_checkpoint, delete_checkpoint,
+    save_value_checkpoint, load_value_checkpoint, has_value_checkpoint, delete_value_checkpoint,
+)
 
 app = Flask(__name__)
+
+SERVER_VERSION = '1.1.0'  # Value mode + GIL yield fixes
 
 # ─── Global State ───────────────────────────────────────────────────────────
 
@@ -36,6 +42,7 @@ _lock = threading.Lock()
 
 # Persistent state for resume across training runs
 _deep_cfr_state: dict = None  # Holds networks + reservoirs between runs
+_value_state: dict = None     # Holds value net + reservoir between runs
 _current_mode: str = None
 
 
@@ -56,6 +63,8 @@ def train_start():
     base_iter = 0
     if _deep_cfr_state and mode == 'deep_cfr' and _current_mode == 'deep_cfr':
         base_iter = _deep_cfr_state.get('base_iteration', 0)
+    elif _value_state and mode == 'value' and _current_mode == 'value':
+        base_iter = _value_state.get('base_iteration', 0)
         resuming = True
 
     _training_state = TrainingState(total_iterations=base_iter + data.get('iterations', 100_000))
@@ -109,6 +118,37 @@ def train_start():
                 _deep_cfr_state = result
             # Save checkpoint on background thread so it doesn't block health checks
             threading.Thread(target=save_checkpoint, args=(result,), daemon=True).start()
+    elif mode == 'value':
+        config = ValueConfig(
+            iterations=data.get('iterations', 100_000),
+            learning_rate=data.get('learning_rate', 0.001),
+            batch_size=data.get('batch_size', 512),
+            train_interval=data.get('train_interval', 1_000),
+            train_steps=data.get('train_steps', 200),
+            report_interval=data.get('report_interval', 5_000),
+            hand_scope=data.get('hand_scope', 'premium'),
+            reservoir_size=data.get('reservoir_size', 2_000_000),
+            mc_samples=data.get('mc_samples', 200),
+        )
+
+        # Resume from in-memory state, or disk checkpoint, or fresh start
+        resume = None
+        if resuming:
+            resume = _value_state
+        elif has_value_checkpoint():
+            resume = load_value_checkpoint()
+            if resume:
+                base_iter = resume.get('base_iteration', 0)
+                _training_state.total_iterations = base_iter + config.iterations
+                _training_state.iteration = base_iter
+                resuming = True
+
+        def _run():
+            global _value_state
+            result = train_value(config, _training_state, resume_state=resume)
+            with _lock:
+                _value_state = result
+            threading.Thread(target=save_value_checkpoint, args=(result,), daemon=True).start()
     else:
         config = TrainingConfig(
             iterations=data.get('iterations', 100_000),
@@ -143,14 +183,16 @@ def train_start():
 
 @app.route('/api/train/reset', methods=['POST'])
 def train_reset():
-    global _training_state, _current_network, _deep_cfr_state, _current_mode
+    global _training_state, _current_network, _deep_cfr_state, _value_state, _current_mode
     if _training_state.running:
         return jsonify({'error': 'Cannot reset while training is running'}), 400
     _training_state = TrainingState()
     _current_network = None
     _deep_cfr_state = None
+    _value_state = None
     _current_mode = None
     delete_checkpoint()
+    delete_value_checkpoint()
     return jsonify({'status': 'reset', 'message': 'All networks, reservoirs, state, and disk checkpoint cleared'})
 
 
@@ -594,14 +636,14 @@ def model_predict():
 
 @app.route('/api/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok', 'version': '1.0.0'})
+    return jsonify({'status': 'ok', 'version': SERVER_VERSION})
 
 
 # ─── Main ───────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("  Neural Razz Trainer — Backend Server")
+    print(f"  Neural Razz Trainer — Backend Server v{SERVER_VERSION}")
     print("=" * 60)
     print(f"  Feature dim: {FEATURE_DIM}")
     print(f"  PyTorch: {__import__('torch').__version__}")

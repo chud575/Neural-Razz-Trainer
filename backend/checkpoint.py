@@ -12,11 +12,12 @@ import time
 import torch
 from typing import Optional
 
-from networks import StrategyNetwork, RegretNetwork
+from networks import StrategyNetwork, RegretNetwork, ValueNetwork
 from reservoir import ReservoirBuffer
 
-# Default checkpoint directory
+# Default checkpoint directories
 CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'checkpoints')
+VALUE_CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'checkpoints_value')
 
 
 def save_checkpoint(state: dict, checkpoint_dir: str = CHECKPOINT_DIR) -> str:
@@ -130,3 +131,95 @@ def delete_checkpoint(checkpoint_dir: str = CHECKPOINT_DIR):
     if os.path.exists(checkpoint_dir):
         shutil.rmtree(checkpoint_dir)
         print(f"[Checkpoint] Deleted {checkpoint_dir}")
+
+
+# ─── Value Mode Checkpoints ──────────────────────────────────────────────
+
+
+def save_value_checkpoint(state: dict, checkpoint_dir: str = VALUE_CHECKPOINT_DIR) -> str:
+    """Save Value training state to disk.
+
+    Args:
+        state: dict with keys:
+            'value_net': ValueNetwork
+            'value_reservoir': ReservoirBuffer
+            'base_iteration': int
+
+    Returns: path to checkpoint directory
+    """
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    torch.save(state['value_net'].state_dict(),
+               os.path.join(checkpoint_dir, 'value_net.pt'))
+
+    with open(os.path.join(checkpoint_dir, 'value_reservoir.pkl'), 'wb') as f:
+        pickle.dump(state['value_reservoir'], f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    metadata = {
+        'base_iteration': state.get('base_iteration', 0),
+        'timestamp': time.time(),
+        'value_reservoir_size': len(state['value_reservoir']),
+    }
+    with open(os.path.join(checkpoint_dir, 'metadata.json'), 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+    total_size = sum(
+        os.path.getsize(os.path.join(checkpoint_dir, f))
+        for f in os.listdir(checkpoint_dir)
+        if os.path.isfile(os.path.join(checkpoint_dir, f))
+    )
+    print(f"[Value Checkpoint] Saved to {checkpoint_dir} ({total_size / 1_000_000:.1f} MB)")
+    print(f"  iteration: {metadata['base_iteration']}, "
+          f"reservoir: {metadata['value_reservoir_size']:,}")
+
+    return checkpoint_dir
+
+
+def load_value_checkpoint(checkpoint_dir: str = VALUE_CHECKPOINT_DIR) -> Optional[dict]:
+    """Load Value training state from disk.
+
+    Returns dict matching train_value's resume_state format, or None if not found.
+    """
+    meta_path = os.path.join(checkpoint_dir, 'metadata.json')
+    if not os.path.exists(meta_path):
+        print(f"[Value Checkpoint] No checkpoint found at {checkpoint_dir}")
+        return None
+
+    try:
+        with open(meta_path) as f:
+            metadata = json.load(f)
+
+        value_net = ValueNetwork()
+        value_net.load_state_dict(
+            torch.load(os.path.join(checkpoint_dir, 'value_net.pt'), weights_only=True))
+        value_net.eval()
+
+        with open(os.path.join(checkpoint_dir, 'value_reservoir.pkl'), 'rb') as f:
+            value_reservoir = pickle.load(f)
+
+        print(f"[Value Checkpoint] Loaded from {checkpoint_dir}")
+        print(f"  iteration: {metadata['base_iteration']}, "
+              f"reservoir: {metadata.get('value_reservoir_size', '?')}")
+
+        return {
+            'value_net': value_net,
+            'value_reservoir': value_reservoir,
+            'base_iteration': metadata['base_iteration'],
+        }
+
+    except Exception as e:
+        print(f"[Value Checkpoint] Failed to load: {e}")
+        return None
+
+
+def has_value_checkpoint(checkpoint_dir: str = VALUE_CHECKPOINT_DIR) -> bool:
+    """Check if a valid value checkpoint exists."""
+    return os.path.exists(os.path.join(checkpoint_dir, 'metadata.json'))
+
+
+def delete_value_checkpoint(checkpoint_dir: str = VALUE_CHECKPOINT_DIR):
+    """Delete the value checkpoint directory."""
+    import shutil
+    if os.path.exists(checkpoint_dir):
+        shutil.rmtree(checkpoint_dir)
+        print(f"[Value Checkpoint] Deleted {checkpoint_dir}")

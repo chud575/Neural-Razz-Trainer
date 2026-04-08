@@ -564,6 +564,10 @@ def train_strategy(config: TrainingConfig,
             iteration=i,
         )
 
+        # Yield GIL periodically so Flask can serve status requests
+        if i % 100 == 99:
+            time.sleep(0)
+
         # ── Train network periodically ──────────────────────────────────
         if i > 0 and i % config.train_interval == 0 and reservoir.size >= config.batch_size:
             loss = _train_step(network, optimizer, reservoir, config.batch_size)

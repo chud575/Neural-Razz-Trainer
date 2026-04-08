@@ -396,6 +396,10 @@ def train_deep_cfr(config: DeepCFRConfig,
                 boosted_iter = int(i * config.hindsight_weight)
                 advantage_reservoir.add(corr.features, corr.advantages, boosted_iter)
 
+        # Yield GIL periodically so Flask can serve status requests
+        if i % 100 == 99:
+            time.sleep(0)
+
         # ── Retrain networks periodically ───────────────────────────────
         if i > 0 and i % config.train_interval == 0:
             if advantage_reservoir.size >= config.batch_size:

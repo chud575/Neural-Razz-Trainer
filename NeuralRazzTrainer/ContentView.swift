@@ -8,32 +8,37 @@ struct ContentView: View {
         NavigationSplitView {
             sidebar
         } detail: {
-            ScrollView {
-                VStack(spacing: 16) {
-                    serverStatusCard
-                    trainingConfigCard
-                    if vm.isTraining || vm.currentIteration > 0 {
-                        trainingProgressCard
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        serverStatusCard
+                        trainingConfigCard
+                        if vm.isTraining || vm.currentIteration > 0 {
+                            trainingProgressCard
+                        }
+                        if !vm.lossHistory.isEmpty {
+                            lossChartCard
+                        }
+                        if vm.hasModel {
+                            arenaCard
+                            exportCard
+                        }
+                        if !vm.arenaResults.isEmpty {
+                            arenaResultsCard
+                        }
+                        if !vm.batteryResults.isEmpty {
+                            batteryResultsCard
+                        }
+                        if vm.hasModel {
+                            autoTrainCard
+                        }
                     }
-                    if !vm.lossHistory.isEmpty {
-                        lossChartCard
-                    }
-                    if vm.hasModel {
-                        arenaCard
-                        exportCard
-                    }
-                    if !vm.arenaResults.isEmpty {
-                        arenaResultsCard
-                    }
-                    if !vm.batteryResults.isEmpty {
-                        batteryResultsCard
-                    }
-                    if vm.hasModel {
-                        autoTrainCard
-                    }
-                    serverLogCard
+                    .padding()
                 }
-                .padding()
+
+                // Server log pinned to bottom, fills remaining space
+                serverLogCard
+                    .padding([.horizontal, .bottom])
             }
         }
         .frame(minWidth: 900, minHeight: 600)
@@ -92,6 +97,11 @@ struct ContentView: View {
             Circle().fill(serverManager.isHealthy ? .green : .orange).frame(width: 12, height: 12)
             Text(serverManager.isHealthy ? "Backend Server Running" : "Starting Backend Server...")
                 .font(.headline)
+            if serverManager.isHealthy && !serverManager.serverVersion.isEmpty {
+                Text("v\(serverManager.serverVersion)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
             Spacer()
             if !vm.statusMessage.isEmpty {
                 Text(vm.statusMessage)
@@ -192,6 +202,39 @@ struct ContentView: View {
                     Text("5M").tag(5_000_000)
                     Text("10M").tag(10_000_000)
                 }.pickerStyle(.segmented)
+            }
+
+            // Value mode options
+            if vm.selectedMode == .value {
+                HStack {
+                    Text("MC Samples").frame(width: 100, alignment: .leading)
+                    Picker("", selection: $vm.mcSamples) {
+                        Text("50").tag(50)
+                        Text("100").tag(100)
+                        Text("200").tag(200)
+                        Text("500").tag(500)
+                    }.pickerStyle(.segmented)
+                }
+
+                HStack {
+                    Text("Train Steps").frame(width: 100, alignment: .leading)
+                    Picker("", selection: $vm.trainStepsPerRetrain) {
+                        Text("50").tag(50)
+                        Text("100").tag(100)
+                        Text("200").tag(200)
+                        Text("500").tag(500)
+                    }.pickerStyle(.segmented)
+                }
+
+                HStack {
+                    Text("Train Interval").frame(width: 100, alignment: .leading)
+                    Picker("", selection: $vm.trainInterval) {
+                        Text("500").tag(500)
+                        Text("1K").tag(1_000)
+                        Text("2K").tag(2_000)
+                        Text("5K").tag(5_000)
+                    }.pickerStyle(.segmented)
+                }
             }
 
             // Hindsight toggle (Deep CFR only)
@@ -852,19 +895,26 @@ struct ContentView: View {
                     .buttonStyle(.bordered).controlSize(.mini)
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(serverManager.serverLog.suffix(20), id: \.self) { line in
-                        Text(line)
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.secondary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(serverManager.serverLog.suffix(50).joined(separator: "\n"))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id("logBottom")
+                }
+                .onChange(of: serverManager.serverLog.count) { _ in
+                    withAnimation {
+                        proxy.scrollTo("logBottom", anchor: .bottom)
                     }
                 }
             }
-            .frame(maxHeight: 120)
+            .frame(minHeight: 80, maxHeight: .infinity)
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 10).fill(.ultraThinMaterial))
+        .frame(minHeight: 120, maxHeight: .infinity)
     }
 
     // MARK: - Helpers

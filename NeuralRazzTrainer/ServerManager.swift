@@ -18,7 +18,7 @@ class ServerManager: ObservableObject {
         guard !isRunning else { return }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.executableURL = URL(fileURLWithPath: findPython())
 
         // Find the backend directory relative to the app
         let backendDir = findBackendDir()
@@ -127,6 +127,28 @@ class ServerManager: ObservableObject {
         let fallback = NSHomeDirectory() + "/Documents/Poker Apps/Neural-Razz-Trainer/backend"
         log("WARNING: Using fallback backend path: \(fallback)")
         return fallback
+    }
+
+    private func findPython() -> String {
+        // Find a Python 3 that has flask installed
+        let candidates = [
+            "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+        ]
+
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) {
+                log("Using Python: \(path)")
+                return path
+            }
+        }
+
+        log("WARNING: Using fallback /usr/bin/python3")
+        return "/usr/bin/python3"
     }
 
     private func log(_ msg: String) {
